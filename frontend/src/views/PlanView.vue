@@ -15,6 +15,12 @@
         <el-button @click="editing = false">取消</el-button>
         <el-button type="primary" :loading="savingPlan" @click="savePlan">保存修改（新版本）</el-button>
       </template>
+      <template v-else>
+        <!-- 还没有方案：提供首次规划/失败重试入口 -->
+        <el-button type="primary" :loading="planning" @click="startPlan">
+          {{ failedJob ? '重试 AI 规划' : '开始 AI 规划' }}
+        </el-button>
+      </template>
     </div>
 
     <el-alert v-if="failedJob" type="error" :closable="false" show-icon class="mb"
@@ -108,7 +114,14 @@
         </el-col>
       </el-row>
     </template>
-    <el-empty v-else-if="!planning && !failedJob" description="尚未生成方案" />
+    <el-empty v-else-if="!planning && !failedJob" description="尚未生成方案">
+      <el-button type="primary" size="large" @click="startPlan">开始 AI 规划</el-button>
+      <template #image><span /></template>
+    </el-empty>
+    <div v-else-if="planning" class="planning-tip mb">
+      <el-icon class="is-loading"><Loading /></el-icon>
+      <span>AI 正在分析商品并生成方案，通常需要几十秒…</span>
+    </div>
 
     <el-drawer v-model="promptsVisible" title="编译后出图提示词" size="45%">
       <div v-for="p in prompts" :key="p.module_id" class="mb">
@@ -233,6 +246,8 @@ async function replan() {
   }
 }
 
+const startPlan = replan
+
 onMounted(() => { loadAll(); listen() })
 onBeforeUnmount(() => es?.close())
 </script>
@@ -257,4 +272,6 @@ onBeforeUnmount(() => es?.close())
   max-height: 260px; overflow: auto; background: var(--el-fill-color-light);
   padding: 10px; border-radius: 6px; }
 .mb { margin-bottom: 14px; }
+.planning-tip { display: flex; align-items: center; gap: 8px; justify-content: center;
+  padding: 40px 0; color: var(--el-text-color-secondary); font-size: 14px; }
 </style>
