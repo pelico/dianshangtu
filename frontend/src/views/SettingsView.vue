@@ -25,10 +25,25 @@
       <template #header>
         <div class="card-head">
           <b>角色 → 模型映射</b>
-          <span class="hint">每个角色独立配置模型、调用方式、超时与并发（PLAN_v2 §5）</span>
+          <span class="hint">每个角色独立配置模型、调用方式、超时与并发；点行首箭头可为该角色配置独立的 Base URL / API Key（留空使用全局）</span>
         </div>
       </template>
       <el-table :data="roleRows" border>
+        <el-table-column type="expand" width="44">
+          <template #default="{ row }">
+            <div class="role-conn">
+              <el-input v-model="row.cfg.base_url"
+                placeholder="独立 Base URL，留空则使用全局网关">
+                <template #prepend>Base URL</template>
+              </el-input>
+              <el-input v-model="roleApiKeys[row.role]" type="password" show-password
+                autocomplete="new-password"
+                :placeholder="row.cfg.has_api_key ? '已保存独立 Key——留空则不修改' : '独立 API Key，留空则使用全局'" />
+              <el-button v-if="row.cfg.has_api_key" size="small" text type="danger"
+                @click="clearRoleKey(row.role)">清除独立 Key（回退全局）</el-button>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="角色" width="130">
           <template #default="{ row }">{{ ROLE_LABELS[row.role] }}</template>
         </el-table-column>
@@ -94,6 +109,8 @@ import { ROLE_LABELS, loadSettings, saveSettings, settings, testConnection } fro
 
 const baseUrl = ref('')
 const apiKey = ref('')
+const roleApiKeys = ref({})     // 角色级独立 Key（仅本次输入，保存后清空）
+const clearKeyFlags = ref({})   // 标记清除独立 Key
 
 const roleRows = computed(() =>
   Object.entries(settings.roles).map(([role, cfg]) => ({ role, cfg }))
@@ -106,10 +123,20 @@ onMounted(async () => {
 
 async function save() {
   const roles = {}
-  for (const { role, cfg } of roleRows.value) roles[role] = cfg
+  for (const { role, cfg } of roleRows.value) {
+    roles[role] = { ...cfg, api_key: roleApiKeys.value[role] || '' }
+    if (clearKeyFlags.value[role]) roles[role].clear_api_key = true
+  }
   await saveSettings({ baseUrl: baseUrl.value, apiKey: apiKey.value, roles })
   apiKey.value = ''
+  roleApiKeys.value = {}
+  clearKeyFlags.value = {}
   ElMessage.success('已保存')
+}
+
+function clearRoleKey(role) {
+  clearKeyFlags.value[role] = true
+  ElMessage.info(`${ROLE_LABELS[role]} 将清除独立 Key，保存后回退全局`)
 }
 
 async function testAll() {
@@ -126,4 +153,5 @@ async function testAll() {
 .card-head { display: flex; align-items: baseline; gap: 12px; }
 .hint { font-size: 12px; color: var(--el-text-color-secondary); }
 .actions { margin: 16px 0; }
+.role-conn { display: flex; flex-direction: column; gap: 8px; padding: 4px 12px; max-width: 640px; }
 </style>

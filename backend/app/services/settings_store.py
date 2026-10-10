@@ -33,11 +33,15 @@ def _set_json(key: str, value) -> None:
 
 def get_settings() -> dict:
     conn_cfg = _get_json(CONN_KEY, {})
-    roles = _get_json(ROLES_KEY, {})
+    roles_raw = _get_json(ROLES_KEY, {})
     merged = {}
     for role in ROLE_ORDER:
         cfg = dict(DEFAULT_ROLES[role])
-        cfg.update({k: v for k, v in (roles.get(role) or {}).items() if v is not None})
+        stored = dict(roles_raw.get(role) or {})
+        has_key = bool(stored.pop("api_key_enc", None))
+        cfg.update({k: v for k, v in stored.items() if v is not None})
+        cfg.setdefault("base_url", "")
+        cfg["has_api_key"] = has_key
         merged[role] = cfg
     api_key_cfg = _get_json(APIKEY_KEY, {})
     return {
@@ -58,14 +62,21 @@ def update_settings(payload: dict) -> dict:
         _set_json(APIKEY_KEY, {"enc": encrypt(str(api_key))})
     roles = payload.get("roles") or {}
     if roles:
-        current = get_settings()["roles"]
+        raw = _get_json(ROLES_KEY, {})
         for role, cfg in roles.items():
             if role not in DEFAULT_ROLES:
                 continue
-            base = dict(current[role])
+            base = dict(raw.get(role) or {})
             for k in ("model", "mode", "size"):
-                if k in cfg:
-                    base[k] = str(cfg[k] or "")
+                if cfg.get(k) is not None:  # None=未提供（部分更新不覆盖）；空串=显式清空
+                    base[k] = str(cfg[k] or "").strip()
+            # 角色级独立网关：base_url 留空 = 回退全局；api_key 非空 = 更新加密存储
+            if cfg.get("base_url") is not None:
+                base["base_url"] = str(cfg["base_url"]).strip()
+            if cfg.get("api_key"):
+                base["api_key_enc"] = encrypt(str(cfg["api_key"]))
+            if cfg.get("clear_api_key"):
+                base.pop("api_key_enc", None)
             for k in ("timeout_s", "concurrency"):
                 if k in cfg:
                     try:
@@ -77,8 +88,8 @@ def update_settings(payload: dict) -> dict:
                     base["unit_price"] = max(0.0, float(cfg["unit_price"]))
                 except (TypeError, ValueError):
                     pass
-            current[role] = base
-        _set_json(ROLES_KEY, current)
+            raw[role] = base
+        _set_json(ROLES_KEY, raw)
     return get_settings()
 
 
@@ -92,12 +103,13 @@ def get_role(role: str) -> dict:
 
 
 def get_gateway(role: str):
-    """按角色构造 Gateway；未配置完整时返回 None。"""
+    """按角色构造 Gateway：角色级 base_url/api_key 优先，未设置时回退全局。未配置完整返回 None。"""
     from ..providers.openai_compat import Gateway
 
     cfg = get_role(role)
-    base_url = _get_json(CONN_KEY, {}).get("base_url", "")
-    api_key = get_api_key()
+    stored = _get_json(ROLES_KEY, {}).get(role) or {}
+    base_url = (cfg.get("base_url") or "").strip() or _get_json(CONN_KEY, {}).get("base_url", "")
+    api_key = decrypt(stored["api_key_enc"]) if stored.get("api_key_enc") else get_api_key()
     if not (base_url and api_key and cfg["model"]):
         return None
     return Gateway(base_url, api_key, timeout=cfg["timeout_s"])

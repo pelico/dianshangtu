@@ -27,6 +27,9 @@ class RoleCfgIn(BaseModel):
     timeout_s: Optional[int] = None
     concurrency: Optional[int] = None
     unit_price: Optional[float] = None
+    base_url: Optional[str] = None        # 角色级独立网关；留空 = 使用全局
+    api_key: Optional[str] = None         # 非空 = 更新该角色独立 Key（加密存储）
+    clear_api_key: Optional[bool] = None  # True = 清除独立 Key，回退全局
 
 
 class SettingsIn(BaseModel):

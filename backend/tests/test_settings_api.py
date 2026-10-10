@@ -61,3 +61,37 @@ def test_test_connection_unconfigured():
     r = client().request("POST", "/api/settings/test", json=body).json()
     assert r["results"][0]["ok"] is False
     assert "未配置" in r["results"][0]["detail"]
+
+
+def test_role_level_gateway_override():
+    """角色可配置独立 Base URL / API Key；get_gateway 按角色优先取用。"""
+    c = client()
+    r = c.put("/api/settings", json={
+        "connection": {"base_url": "http://global-gw/v1", "api_key": "sk-global"},
+        "roles": {"image_main": {"model": "img-model", "base_url": "http://role-gw/v1",
+                                 "api_key": "sk-role"}},
+    })
+    assert r.status_code == 200, r.text
+    s = r.json()
+    assert s["roles"]["image_main"]["base_url"] == "http://role-gw/v1"
+    assert s["roles"]["image_main"]["has_api_key"] is True   # 独立 Key 已存（不回传明文）
+    assert "api_key" not in s["roles"]["image_main"]
+
+    gw = settings_store.get_gateway("image_main")
+    assert gw is not None
+    assert gw.base == "http://role-gw/v1"                    # 用了角色级 base_url
+    assert gw.headers["Authorization"] == "Bearer sk-role"   # 用了角色级 Key
+
+    # 未配置独立连接的角色回退全局
+    gw2 = settings_store.get_gateway("qa_vlm")
+    assert gw2 is None  # 无模型名 → 不可用
+    c.put("/api/settings", json={"roles": {"qa_vlm": {"model": "vlm-model"}}})
+    gw3 = settings_store.get_gateway("qa_vlm")
+    assert gw3.base == "http://global-gw/v1"
+    assert gw3.headers["Authorization"] == "Bearer sk-global"
+
+    # 清除独立 Key → 回退全局
+    c.put("/api/settings", json={"roles": {"image_main": {"clear_api_key": True}}})
+    gw4 = settings_store.get_gateway("image_main")
+    assert gw4.base == "http://role-gw/v1"                   # base_url 仍是角色级
+    assert gw4.headers["Authorization"] == "Bearer sk-global"
