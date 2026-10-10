@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+requests
+pillow
+cryptography
+python-multipart
+
+# dev / test
+pytest
+httpx

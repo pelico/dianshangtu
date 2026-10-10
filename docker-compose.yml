@@ -1,0 +1,14 @@
+services:
+  aizuotu:
+    image: ghcr.io/OWNER/aizuotu:latest   # 推送到 GitHub 后替换 OWNER 为你的用户名/组织（小写）
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # 必设：用于加密存储网关 API Key 的主密钥（随便一串长随机字符，不要泄露）
+      APP_SECRET: "change-me-to-a-long-random-string"
+      # 可选：设置后打开网页需要输入此访问密码
+      APP_PASSWORD: ""
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

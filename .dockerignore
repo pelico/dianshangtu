@@ -1,0 +1,15 @@
+# 构建期排除：只带 backend/app 与 frontend 源码进镜像
+.git
+.github
+.workbuddy
+data
+docs
+poc
+node_modules
+frontend/dist
+frontend/node_modules
+backend/**/__pycache__
+backend/.pytest_cache
+*.md
+!README.md
+docker-compose.yml
