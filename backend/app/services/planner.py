@@ -21,8 +21,20 @@ MODULE_REQUIRED = ["id", "title_cn", "role", "scene", "product_pose", "photo_goa
 # ---------- 解析与校验（对应 poc 的去围栏 + json.loads，加了校验） ----------
 
 def parse_plan_json(text: str) -> dict:
+    """容错解析：去围栏 → 截取首尾大括号 → 兼容网关双重编码。非 dict 抛 ValueError。"""
     txt = re.sub(r"^```(?:json)?|```$", "", text.strip()).strip()
-    return json.loads(txt)
+    try:
+        plan = json.loads(txt)
+    except json.JSONDecodeError:
+        s, e = txt.find("{"), txt.rfind("}")
+        if s == -1 or e <= s:
+            raise
+        plan = json.loads(txt[s:e + 1])  # 忽略 JSON 前后的说明文字
+    if isinstance(plan, str):            # 部分网关会把 JSON 再编码一层字符串
+        plan = json.loads(plan)
+    if not isinstance(plan, dict):
+        raise ValueError("plan is not a JSON object")
+    return plan
 
 
 def validate_plan(plan: dict) -> None:
@@ -89,6 +101,9 @@ def make_plan(preset_version: dict, ref_paths: list[str], brief: str, params: di
 
     res = gw.chat(model, messages, temperature=0.7, response_format={"type": "json_object"})
     text = res["choices"][0]["message"]["content"]
+    if not isinstance(text, str) or not text.strip():
+        raise GatewayError(
+            f"规划模型返回了空/非文本内容（{type(text).__name__}），请确认该模型支持图像输入与 JSON 输出")
     try:
         plan = parse_plan_json(text)
         validate_plan(plan)
@@ -102,9 +117,16 @@ def make_plan(preset_version: dict, ref_paths: list[str], brief: str, params: di
                 "Output ONLY one valid JSON object that follows the schema. No markdown fences.")},
         ]
         res = gw.chat(model, messages, temperature=0.7, response_format={"type": "json_object"})
-        plan = parse_plan_json(res["choices"][0]["message"]["content"])
-        validate_plan(plan)  # 二次失败直接抛，落库为任务错误
-        return plan
+        text2 = res["choices"][0]["message"]["content"]
+        try:
+            plan = parse_plan_json(text2 or "")
+            validate_plan(plan)
+            return plan
+        except (json.JSONDecodeError, ValueError) as second_err:
+            # 二次失败：带上原始输出片段，方便排查模型行为
+            raise ValueError(
+                f"规划输出无法解析为方案 JSON（{second_err}）。"
+                f"模型原始输出开头：{(text2 or '')[:300]!r}")
 
 
 # ---------- 数据访问 ----------
